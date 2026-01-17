@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Shield, Activity } from 'lucide-react';
+import { Shield, Activity, Radio } from 'lucide-react';
 import ThreatMap from './components/ThreatMap';
 import StatsPanel from './components/StatsPanel';
 import PacketFeed from './components/PacketFeed';
@@ -7,40 +7,55 @@ import ThreatFeed from './components/ThreatFeed';
 import TopThreats from './components/TopThreats';
 import ExportButton from './components/ExportButton';
 import { generatePacket, updateAnalytics } from './lib/packetSimulator';
+import { supabase } from './lib/supabase';
 
 function App() {
   const [isActive, setIsActive] = useState(true);
   const [packetCount, setPacketCount] = useState(0);
-  // Inside the App function, before the existing useEffect
-useEffect(() => {
-  const fetchInitialCount = async () => {
-    // This asks Supabase for the total number of rows in the 'packets' table
-    const { count } = await supabase
-      .from('packets')
-      .select('*', { count: 'exact', head: true });
-    
-    if (count !== null) setPacketCount(count);
-  };
+  const [useSimulator, setUseSimulator] = useState(true);
 
-  fetchInitialCount();
-}, []);
   useEffect(() => {
-    if (!isActive) return;
+    const fetchInitialCount = async () => {
+      const { count } = await supabase
+        .from('packets')
+        .select('*', { count: 'exact', head: true });
+
+      if (count !== null) setPacketCount(count);
+    };
+
+    fetchInitialCount();
+
+    const subscription = supabase
+      .channel('packet-count')
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'packets'
+      }, () => {
+        setPacketCount(prev => prev + 1);
+      })
+      .subscribe();
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isActive || !useSimulator) return;
 
     const generatePackets = async () => {
       await generatePacket();
-      setPacketCount(prev => prev + 1);
     };
 
     const packetInterval = setInterval(generatePackets, 2000);
-
     const analyticsInterval = setInterval(updateAnalytics, 30000);
 
     return () => {
       clearInterval(packetInterval);
       clearInterval(analyticsInterval);
     };
-  }, [isActive]);
+  }, [isActive, useSimulator]);
 
   return (
     <div className="min-h-screen bg-gray-950">
@@ -58,6 +73,18 @@ useEffect(() => {
             </div>
 
             <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2 px-3 py-2 bg-gray-800 rounded-lg border border-gray-700">
+                <Radio className={`w-4 h-4 ${useSimulator ? 'text-yellow-400' : 'text-green-400'}`} />
+                <select
+                  value={useSimulator ? 'simulator' : 'real'}
+                  onChange={(e) => setUseSimulator(e.target.value === 'simulator')}
+                  className="bg-transparent text-sm text-gray-300 font-medium border-none outline-none cursor-pointer"
+                >
+                  <option value="simulator">Simulator Mode</option>
+                  <option value="real">Real Capture Mode</option>
+                </select>
+              </div>
+
               <div className="flex items-center gap-2 px-4 py-2 bg-gray-800 rounded-lg border border-gray-700">
                 <div className={`w-2 h-2 rounded-full ${isActive ? 'bg-green-500 animate-pulse' : 'bg-gray-500'}`} />
                 <span className="text-sm text-gray-300 font-medium">
@@ -67,12 +94,14 @@ useEffect(() => {
 
               <ExportButton />
 
-              <button
-                onClick={() => setIsActive(!isActive)}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
-              >
-                {isActive ? 'Pause' : 'Resume'}
-              </button>
+              {useSimulator && (
+                <button
+                  onClick={() => setIsActive(!isActive)}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
+                >
+                  {isActive ? 'Pause' : 'Resume'}
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -101,34 +130,27 @@ useEffect(() => {
           </div>
         </div>
       </main>
-      <footer className="bg-gray-900 border-t border-gray-800 mt-12">
-        <div className="flex items-center justify-between text-sm text-gray-500">
-  <div className="flex items-center gap-2">
-    <Activity className="w-4 h-4" />
-    <span>Packets Captured: {packetCount.toLocaleString()}</span>
-  </div>
-  {/* This adds your name to the bottom right corner */}
-  <div className="flex items-center gap-4">
-    <span>ThreatWatch SOC v1.0</span>
-    <span className="text-blue-400 font-medium">Made by Aastik</span>
-  </div>
-</div>
-  <div className="max-w-[1920px] mx-auto px-6 py-4">
-    <div className="flex items-center justify-between text-sm text-gray-500">
-      <div className="flex items-center gap-2">
-        <Activity className="w-4 h-4" />
-        <span>Packets Captured: {packetCount.toLocaleString()}</span>
-      </div>
-      {/* Add your name here */}
-      <div className="flex items-center gap-4">
-        <span>ThreatWatch SOC v1.0</span>
-        <span className="text-blue-400 font-medium">Made by Aastik</span>
-      </div>
-    </div>
-  </div>
-</footer>
 
-      
+      <footer className="bg-gray-900 border-t border-gray-800 mt-12">
+        <div className="max-w-[1920px] mx-auto px-6 py-4">
+          <div className="flex items-center justify-between text-sm text-gray-500">
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <Activity className="w-4 h-4" />
+                <span>Packets Captured: {packetCount.toLocaleString()}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Radio className="w-4 h-4" />
+                <span>Mode: {useSimulator ? 'Simulator' : 'Real Capture'}</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-4">
+              <span>ThreatWatch SOC v1.0</span>
+              <span className="text-blue-400 font-medium">Made by Aastik</span>
+            </div>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }

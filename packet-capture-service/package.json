@@ -1,0 +1,19 @@
+{
+  "name": "threatwatch-packet-capture",
+  "version": "1.0.0",
+  "description": "Real-time packet capture service for ThreatWatch SOC",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.57.4",
+    "node-fetch": "^3.3.2",
+    "dotenv": "^16.4.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
